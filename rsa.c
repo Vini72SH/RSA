@@ -1,7 +1,6 @@
 #include <openssl/bn.h>
 #include <openssl/types.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 #define NBITS 256
@@ -14,87 +13,173 @@ void printBN(char *msg, BIGNUM *a) {
   OPENSSL_free(number_str);
 }
 
-int main() {
-  char *s = malloc((NBITS) * sizeof(char));
+void deriveRSAKeys(BN_CTX *ctx, const char *p, const char *q, const char *e,
+                   BIGNUM *nRet, BIGNUM *privateRet, BIGNUM *publicRet) {
+  BIGNUM *pminus1 = BN_new();
+  BIGNUM *qminus1 = BN_new();
+  BN_hex2bn(&pminus1, p);
+  BN_hex2bn(&qminus1, q);
 
-  if (scanf("%255s", s) != 1) {
-    fprintf(stderr, "Failed to read input\n");
-    free(s);
-    return 1;
-  }
+  BN_mul(nRet, pminus1, qminus1, ctx);
 
-  if (strlen(s) >= (NBITS / 8)) {
-    fprintf(stderr, "Input too long (max %d hex digits)\n", NBITS / 8 - 1);
-    free(s);
-    return 1;
-  }
+  BN_sub_word(pminus1, 1);
+  BN_sub_word(qminus1, 1);
 
-  BN_CTX *ctx = BN_CTX_new();
+  BIGNUM *gcd = BN_new();
+  BN_gcd(gcd, pminus1, qminus1, ctx);
 
-  BIGNUM *p = BN_new();
-  BIGNUM *q = BN_new();
-
-  BIGNUM *e = BN_new();
-  BIGNUM *d = BN_new();
-  BIGNUM *n = BN_new();
+  BIGNUM *totientN = BN_new();
+  BN_mul(totientN, pminus1, qminus1, ctx);
 
   BIGNUM *lambda = BN_new();
-
-  BIGNUM *psub1 = BN_new();
-  BIGNUM *qsub1 = BN_new();
-
-  BIGNUM *mulsub = BN_new();
-  BIGNUM *pqgcd = BN_new();
-
-  BIGNUM *minus1 = BN_new();
-
-  BIGNUM *m = BN_new();
-  BIGNUM *c = BN_new();
-  BIGNUM *decrypted = BN_new();
-
-  BN_hex2bn(&p, "F7E75FDC469067FFDC4E847C51F452DF");
-  BN_hex2bn(&q, "E85CED54AF57E53E092113E62F436F4F");
-  BN_hex2bn(&e, "0D88C3");
-
-  BN_mul(n, p, q, ctx);
-
-  BN_hex2bn(&psub1, "F7E75FDC469067FFDC4E847C51F452DE");
-  BN_hex2bn(&qsub1, "E85CED54AF57E53E092113E62F436F4E");
-
-  BN_gcd(pqgcd, psub1, qsub1, ctx);
-  BN_mul(mulsub, psub1, qsub1, ctx);
-  BN_div(lambda, NULL, mulsub, pqgcd, ctx);
+  BN_div(lambda, NULL, totientN, gcd, ctx);
 
   // d = e^-1 mod lambda(n)
-  BN_mod_inverse(d, e, lambda, ctx);
+  BN_hex2bn(&publicRet, e);
+  BN_mod_inverse(privateRet, publicRet, lambda, ctx);
 
-  BN_hex2bn(&m, s);
-
-  // c = m^e mod n
-  BN_mod_exp(c, m, e, n, ctx);
-
-  printBN("M = ", m);
-  printBN("Encrypted Message = ", c);
-
-  // decrypted = c^d mod n
-  BN_mod_exp(decrypted, c, d, n, ctx);
-  printBN("Decrypted Message = ", decrypted);
-
-  BN_free(decrypted);
-  BN_free(c);
-  BN_free(m);
-  BN_free(mulsub);
-  BN_free(pqgcd);
-  BN_free(minus1);
-  BN_free(qsub1);
-  BN_free(psub1);
+  BN_free(pminus1);
+  BN_free(qminus1);
+  BN_free(gcd);
+  BN_free(totientN);
   BN_free(lambda);
+}
+
+BIGNUM *RSAFunction(BN_CTX *ctx, BIGNUM *n, BIGNUM *key, BIGNUM *m) {
+  BIGNUM *c = BN_new();
+  BN_mod_exp(c, m, key, n, ctx);
+
+  return c;
+}
+
+void task1(BN_CTX *ctx) {
+  BIGNUM *n = BN_new();
+  BIGNUM *privateKey = BN_new();
+  BIGNUM *publicKey = BN_new();
+
+  deriveRSAKeys(ctx, "F7E75FDC469067FFDC4E847C51F452DF",
+                "E85CED54AF57E53E092113E62F436F4F", "0D88C3", n, privateKey,
+                publicKey);
+
+  printf("=== task 1 ===\n");
+  printBN("Private key: ", privateKey);
+  printBN("N: ", n);
+
   BN_free(n);
-  BN_free(d);
-  BN_free(e);
-  BN_free(q);
-  BN_free(p);
+  BN_free(publicKey);
+  BN_free(privateKey);
+}
+
+void task2and3and4(BN_CTX *ctx) {
+  BIGNUM *n = BN_new();
+  BIGNUM *publicKey = BN_new();
+  BIGNUM *message = BN_new();
+  BIGNUM *privateKey = BN_new();
+
+  BN_hex2bn(&n,
+            "DCBFFE3E51F62E09CE7032E2677A78946A849DC4CDDE3A4D0CB81629242FB1A5");
+  BN_hex2bn(&publicKey, "010001");
+  BN_hex2bn(&privateKey,
+            "74D806F9F3A62BAE331FFE3F0A68AFE35B3D2E4794148AACBC26AA381CD7D30D");
+  BN_hex2bn(&message, "4120746f702073656372657421"); // "A top secret!"
+
+  printf("=== task 2 ===\n");
+  BIGNUM *encrypted = RSAFunction(ctx, n, publicKey, message);
+  printBN("Encrypted: ", encrypted);
+  BIGNUM *verify = RSAFunction(ctx, n, privateKey, encrypted);
+  printBN("Verify: ", verify);
+  if (BN_cmp(verify, message) == 0) {
+    printf("Does match.\n");
+  } else {
+    printf("Wrong!\n");
+  }
+
+  printf("=== task 3 ===\n");
+  BIGNUM *encryptedMessage = BN_new();
+  BN_hex2bn(&encryptedMessage,
+            "8C0F971DF2F3672B28811407E2DABBE1DA0FEBBBDFC7DCB67396567EA1E2493F");
+  BIGNUM *decrypted = RSAFunction(ctx, n, privateKey, encryptedMessage);
+  printBN("Decrypted: ", decrypted);
+
+  printf("=== task 4 ===\n");
+  BIGNUM *messageToSign = BN_new();
+  BN_hex2bn(&messageToSign,
+            "49206f776520796f752024323030302e"); // "I owe you $2000."
+  BIGNUM *signedMessage = RSAFunction(ctx, n, privateKey, messageToSign);
+  printBN("Signed message: ", signedMessage);
+  BIGNUM *differentMessageToSign = BN_new();
+  BN_hex2bn(&differentMessageToSign,
+            "49206f776520796f752024333030302e"); // "I owe you $3000."
+  BIGNUM *differentSignedMessage =
+      RSAFunction(ctx, n, privateKey, differentMessageToSign);
+  printBN("Different signed message: ", differentSignedMessage);
+
+  BN_free(n);
+  BN_free(publicKey);
+  BN_free(privateKey);
+  BN_free(message);
+  BN_free(encrypted);
+  BN_free(verify);
+  BN_free(encryptedMessage);
+  BN_free(decrypted);
+  BN_free(messageToSign);
+  BN_free(signedMessage);
+  BN_free(differentMessageToSign);
+  BN_free(differentSignedMessage);
+}
+
+void task5(BN_CTX *ctx) {
+  BIGNUM *n = BN_new();
+  BIGNUM *publicKey = BN_new();
+  BIGNUM *message = BN_new();
+  BIGNUM *signature = BN_new();
+
+  BN_hex2bn(&n,
+            "AE1CD4DC432798D933779FBD46C6E1247F0CF1233595113AA51B450F18116115");
+  BN_hex2bn(&publicKey, "010001");
+  BN_hex2bn(&signature,
+            "643D6F34902D9C7EC90CB0B2BCA36C47FA37165C0005CAB026C0542CBDB6802F");
+  BN_hex2bn(&message,
+            "4c61756e63682061206d697373696c652e"); // "Launch a missile."
+
+  BIGNUM *verification = RSAFunction(ctx, n, publicKey, signature);
+
+  printf("=== task 5 ===\n");
+  printBN("Verification: ", verification);
+  if (BN_cmp(verification, message) == 0) {
+    printf("It's legit.\n");
+  } else {
+    printf("Not legit.\n");
+  }
+
+  BIGNUM *corruptedSignature = BN_new();
+  // Only one bit of change.
+  BN_hex2bn(&corruptedSignature,
+            "643D6F34902D9C7EC90CB0B2BCA36C47FA37165C0005CAB026C0542CBDB6803F");
+  BIGNUM *corruptedVerification =
+      RSAFunction(ctx, n, publicKey, corruptedSignature);
+  printBN("Verification: ", corruptedVerification);
+  if (BN_cmp(corruptedVerification, message) == 0) {
+    printf("It's legit.\n");
+  } else {
+    printf("Not legit.\n");
+  }
+
+  BN_free(n);
+  BN_free(publicKey);
+  BN_free(message);
+  BN_free(signature);
+  BN_free(corruptedSignature);
+  BN_free(verification);
+  BN_free(corruptedVerification);
+}
+
+int main(int argc, char *argv[]) {
+  BN_CTX *ctx = BN_CTX_new();
+
+  task1(ctx);
+  task2and3and4(ctx);
+  task5(ctx);
 
   BN_CTX_free(ctx);
-  free(s);
 }

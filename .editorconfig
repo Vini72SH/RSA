@@ -1,0 +1,12 @@
+root = true
+
+# Common source files: enforce 2-space indentation
+[*.{c,h}]
+indent_style = space
+indent_size = 2
+tab_width = 2
+
+# Makefiles require tabs
+[Makefile]
+indent_style = tab
+trim_trailing_whitespace = false
